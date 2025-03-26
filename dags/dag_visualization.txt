@@ -1,0 +1,110 @@
+Weather Data ETL Pipeline - Airflow DAG Visualization
+============================================
+
+start_pipeline
+    │
+    ▼
+┌───────────────────────────────────────────────┐
+│                                               │
+▼                                               ▼
+extract_station_26953_2023                extract_station_31688_2023
+    │                                           │
+    ▼                                           ▼
+extract_station_26953_2024                extract_station_31688_2024
+    │                                           │
+    └───────────────────┬─────────────────────┘
+                        │
+                        ▼
+             check_extractions_completed
+                        │
+                        ▼
+                check_data_quality
+                 ┌──────┴──────┐
+                 │             │
+                 ▼             ▼
+        run_transformation   skip_transformation
+                 │             │
+                 └──────┬──────┘
+                        │
+                        ▼
+                  run_analysis
+                        │
+                        ▼
+              save_analysis_results
+                        │
+                        ▼
+                 end_pipeline
+
+
+Task Details:
+============
+
+1. start_pipeline: DummyOperator
+   - Marks the beginning of the pipeline
+
+2. extract_station_X_Y: PythonOperator
+   - Dynamically generated for each station/year combination
+   - Fetches data from weather API for station X, year Y
+   - Performs initial data quality checks
+   - Outputs: CSV file path, quality check results via XCom
+
+3. check_extractions_completed: PythonSensor
+   - Polls until all extraction tasks complete
+   - Gathers and combines quality results from all extraction tasks
+   - Saves consolidated quality report
+   - Outputs: Boolean success/failure
+
+4. check_data_quality: BranchPythonOperator
+   - Evaluates data quality metrics
+   - Makes decision on whether to transform data
+   - Branching point: routes to run_transformation or skip_transformation
+
+5. run_transformation: PythonOperator
+   - Loads extracted data from all stations/years
+   - Aggregates hourly data to monthly statistics
+   - Joins with geonames reference data
+   - Calculates year-over-year comparisons
+   - Outputs: CSV file with transformed data
+
+6. skip_transformation: DummyOperator
+   - Bypass path when data quality is insufficient
+   - Allows pipeline to continue to analysis using existing data
+
+7. run_analysis: PythonOperator
+   - Loads transformed data to SQLite
+   - Runs SQL queries for various analyses
+   - Outputs: Dictionary of analysis results via XCom
+
+8. save_analysis_results: PythonOperator
+   - Receives analysis results from previous task
+   - Formats and saves results to JSON file
+   - Outputs: Path to saved results file
+
+9. end_pipeline: DummyOperator
+   - Marks the end of the pipeline
+   - Uses TriggerRule.ONE_SUCCESS to run even if some tasks failed
+
+Special Features:
+===============
+
+1. Dynamic Task Generation:
+   - Creates extraction tasks for each station/year combination automatically
+   - Easy to add or remove stations/years by modifying DEFAULT_STATIONS and DEFAULT_YEARS
+
+2. Conditional Execution:
+   - Uses branching to allow for different execution paths
+   - Can skip transformation if data quality issues are detected
+
+3. Error Handling:
+   - Retry mechanisms for API calls
+   - Sensors with timeout and poke interval settings
+   - Trigger rules to handle partial failures
+
+4. Data Quality Management:
+   - Quality checks during extraction
+   - Quality-based branching
+   - Detailed quality reports
+
+5. Data Communication:
+   - XCom used to pass data between tasks
+   - Results accessible via Airflow UI 
